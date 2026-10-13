@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+*.tsbuildinfo
+
+# Generated navigation data (rebuilt with `npm run navdata`)
+data/generated/
+
+# Third-party reference material (not ours to redistribute)
+inspo/
+
+# Logs & local env
+*.log
+npm-debug.log*
+.env
+.env.*
+
+# Test / tooling output
+coverage/
+test-results/
+playwright-report/
+.screenshots/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/
+data/cache/

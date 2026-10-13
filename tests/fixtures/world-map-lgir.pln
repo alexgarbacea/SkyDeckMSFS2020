@@ -1,0 +1,54 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+
+<SimBase.Document Type="AceXML" version="1,0">
+    <Descr>AceXML Document</Descr>
+    <FlightPlan.FlightPlan>
+        <Title>Nikos Kazantzakis to Nikos Kazantzakis</Title>
+        <FPType>IFR</FPType>
+        <RouteType>LowAlt</RouteType>
+        <CruisingAlt>1000.000</CruisingAlt>
+        <DepartureID>LGIR</DepartureID>
+        <DepartureLLA>N35° 20' 23.05",E25° 10' 48.82",+000100.00</DepartureLLA>
+        <DestinationID>LGIR</DestinationID>
+        <DestinationLLA>N35° 20' 23.05",E25° 10' 48.82",+000100.00</DestinationLLA>
+        <Descr>Nikos Kazantzakis to Nikos Kazantzakis</Descr>
+        <DeparturePosition>9</DeparturePosition>
+        <DepartureName>Nikos Kazantzakis</DepartureName>
+        <DestinationName>Nikos Kazantzakis</DestinationName>
+        <AppVersion>
+            <AppVersionMajor>11</AppVersionMajor>
+            <AppVersionBuild>282174</AppVersionBuild>
+        </AppVersion>
+        <ATCWaypoint id="LGIR">
+            <ATCWaypointType>Airport</ATCWaypointType>
+            <WorldPosition>N35° 20' 23.05",E25° 10' 48.82",+000100.00</WorldPosition>
+            <SpeedMaxFP>-1</SpeedMaxFP>
+            <ICAO>
+                <ICAOIdent>LGIR</ICAOIdent>
+            </ICAO>
+        </ATCWaypoint>
+        <ATCWaypoint id="TIMECRUIS">
+            <ATCWaypointType>User</ATCWaypointType>
+            <WorldPosition>N35° 18' 57.55",E25° 6' 28.39",+001000.00</WorldPosition>
+            <SpeedMaxFP>-1</SpeedMaxFP>
+        </ATCWaypoint>
+        <ATCWaypoint id="Custom">
+            <ATCWaypointType>User</ATCWaypointType>
+            <WorldPosition>N35° 18' 47.86",E25° 5' 58.99",+001000.00</WorldPosition>
+            <SpeedMaxFP>-1</SpeedMaxFP>
+        </ATCWaypoint>
+        <ATCWaypoint id="TIMEDSCNT">
+            <ATCWaypointType>User</ATCWaypointType>
+            <WorldPosition>N35° 18' 57.40",E25° 6' 27.91",+001000.00</WorldPosition>
+            <SpeedMaxFP>-1</SpeedMaxFP>
+        </ATCWaypoint>
+        <ATCWaypoint id="LGIR">
+            <ATCWaypointType>Airport</ATCWaypointType>
+            <WorldPosition>N35° 20' 23.05",E25° 10' 48.82",+000100.00</WorldPosition>
+            <SpeedMaxFP>-1</SpeedMaxFP>
+            <ICAO>
+                <ICAOIdent>LGIR</ICAOIdent>
+            </ICAO>
+        </ATCWaypoint>
+    </FlightPlan.FlightPlan>
+</SimBase.Document>

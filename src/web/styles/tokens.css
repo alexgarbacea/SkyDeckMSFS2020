@@ -1,0 +1,63 @@
+/*
+  SkyDeck design tokens.
+  Colour follows glass-cockpit convention, so colour always carries meaning:
+    white   = current / measured values
+    cyan    = values you select (bugs, targets, standby frequencies)
+    green   = engaged modes and healthy states
+    magenta = the GPS route and anything derived from it
+    amber   = caution, armed, paused, demo
+    red     = warnings and failures
+*/
+:root {
+  color-scheme: dark;
+
+  /* Surfaces: painted panel metal around dark display glass */
+  --paint: #1f262d;
+  --paint-raised: #29313a;
+  --paint-high: #333c46;
+  --glass: #0a1015;
+  --glass-edge: #3a4550;
+  --rule: #38424c;
+
+  /* Ink */
+  --ink: #e9eef2;
+  --ink-2: #a9b5bf;
+  --ink-3: #74828e;
+
+  /* Avionics semantics */
+  --cyan: #3fd0e6;
+  --cyan-dim: #1d6f7c;
+  --magenta: #ea4fdc;
+  --magenta-dim: #7d2b77;
+  --green: #4fdc84;
+  --green-dim: #1f6b3d;
+  --amber: #f3b43f;
+  --amber-dim: #6e5320;
+  --red: #f25b52;
+
+  /* Type */
+  --font-ui: 'Barlow Semi Condensed', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'B612', 'Segoe UI', system-ui, sans-serif;
+  --fs-xs: 12px;
+  --fs-sm: 13.5px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 24px;
+  --fs-xxl: 34px;
+
+  /* Shape & space */
+  --r-sm: 3px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --space: 8px;
+  --focus: 0 0 0 2px var(--glass), 0 0 0 4px var(--cyan);
+  --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.55), 0 0 0 1px var(--glass-edge);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

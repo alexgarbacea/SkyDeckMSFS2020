@@ -1,0 +1,44 @@
+{
+  "name": "skydeck",
+  "version": "0.1.0",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "description": "SkyDeck - a browser control centre for Microsoft Flight Simulator 2020",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c cyan,magenta \"tsx watch src/server/main.ts --dev\" \"vite\"",
+    "start": "tsx src/server/main.ts",
+    "build": "vite build && node scripts/build-server.mjs",
+    "package": "npm run build && node scripts/package-exe.mjs",
+    "navdata": "node scripts/build-navdata.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "diagnose": "tsx scripts/diagnostics/probe-sim.ts"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "node-simconnect": "4.2.1",
+    "ws": "8.18.0"
+  },
+  "devDependencies": {
+    "@fontsource/b612": "5.1.0",
+    "@fontsource/barlow-semi-condensed": "5.1.0",
+    "@types/express": "4.17.21",
+    "@types/node": "22.9.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/ws": "8.5.13",
+    "@vitejs/plugin-react": "4.3.4",
+    "concurrently": "9.1.0",
+    "dockview": "3.2.0",
+    "esbuild": "0.24.0",
+    "maplibre-gl": "4.7.1",
+    "postject": "1.0.0-alpha.6",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vitest": "2.1.8"
+  }
+}
