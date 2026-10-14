@@ -1,6 +1,6 @@
 // Live application state fed by the SkyDeck server over a WebSocket.
 import { useSyncExternalStore } from 'react';
-import type { AvionicsPlanState, Command, FlightPlan, ServerMessage, ServerStatus, Settings, Telemetry } from '../../shared/types';
+import type { AtcState, AvionicsPlanState, Command, FlightPlan, GroundState, ServerMessage, ServerStatus, Settings, Telemetry } from '../../shared/types';
 import { toast } from './toast';
 
 export interface AppState {
@@ -12,9 +12,11 @@ export interface AppState {
   settings: Settings | null;
   /** The flight plan the aircraft's avionics hold, when SkyDeck Link is connected. */
   avionics: AvionicsPlanState | null;
+  ground: GroundState | null;
+  atc: AtcState | null;
 }
 
-let state: AppState = { online: false, status: null, telemetry: null, plan: null, settings: null, avionics: null };
+let state: AppState = { online: false, status: null, telemetry: null, plan: null, settings: null, avionics: null, ground: null, atc: null };
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<AppState>) {
@@ -40,12 +42,17 @@ export const usePlan = () => useApp((s) => s.plan);
 export const useSettings = () => useApp((s) => s.settings);
 export const useStatus = () => useApp((s) => s.status);
 export const useAvionics = () => useApp((s) => s.avionics);
+export const useGround = () => useApp((s) => s.ground);
+export const useAtc = () => useApp((s) => s.atc);
 
 export function setLocalPlan(plan: FlightPlan | null) {
   set({ plan });
 }
 export function setLocalSettings(settings: Settings) {
   set({ settings });
+}
+export function setLocalAtc(atc: AtcState) {
+  set({ atc });
 }
 
 // ---------------------------------------------------------------- Socket
@@ -88,6 +95,12 @@ export function connect() {
         break;
       case 'avionics':
         set({ avionics: msg.state });
+        break;
+      case 'ground':
+        set({ ground: msg.state });
+        break;
+      case 'atc':
+        set({ atc: msg.state });
         break;
       case 'notice':
         toast(msg.message, msg.level);

@@ -48,6 +48,10 @@ const PANEL_WORDS: Record<string, string> = {
   aircraft: 'aircraft',
   simulator: 'sim',
   sim: 'sim',
+  atc: 'atc',
+  'air traffic control': 'atc',
+  ground: 'ground',
+  stands: 'ground',
 };
 
 const RADIO_ALIASES: Record<string, RadioName> = { com1: 'com1', c1: 'com1', com: 'com1', com2: 'com2', c2: 'com2', nav1: 'nav1', n1: 'nav1', nav2: 'nav2', n2: 'nav2' };

@@ -6,6 +6,8 @@ import { RadiosPanel } from './RadiosPanel';
 import { FlightDataPanel } from './FlightDataPanel';
 import { AircraftPanel } from './AircraftPanel';
 import { SimulatorPanel } from './SimulatorPanel';
+import { AtcPanel } from './AtcPanel';
+import { GroundPanel } from './GroundPanel';
 
 export interface PanelProps {
   /** True when shown in the large "detail" view. */
@@ -28,6 +30,8 @@ export const PANELS: PanelDef[] = [
   { id: 'flight', title: 'Flight data', detailHint: 'Attitude indicator, GPS and time', component: FlightDataPanel },
   { id: 'aircraft', title: 'Aircraft', detailHint: 'Engine details, fuel and weight', component: AircraftPanel },
   { id: 'sim', title: 'Simulator', detailHint: 'Larger repositioning tools', component: SimulatorPanel },
+  { id: 'atc', title: 'ATC', detailHint: 'Larger radio log and the ATIS', component: AtcPanel },
+  { id: 'ground', title: 'Ground', detailHint: 'Turn-by-turn taxi instructions', component: GroundPanel },
 ];
 
 export const panelById = (id: string) => PANELS.find((p) => p.id === id);

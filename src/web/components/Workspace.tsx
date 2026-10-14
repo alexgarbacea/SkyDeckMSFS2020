@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import { getState } from '../lib/store';
 import { Button, Icon } from './ui';
 
-export const PRESETS = ['Cruise', 'Planning', 'Approach'] as const;
+export const PRESETS = ['Cruise', 'Planning', 'Approach', 'Airport'] as const;
 
 type Add = (id: string, position?: { referencePanel: string; direction: 'right' | 'left' | 'above' | 'below' | 'within' }, size?: { w?: number; h?: number }) => void;
 
@@ -47,7 +47,16 @@ export function applyPreset(dock: DockviewApi, name: string) {
       add('radios', { referencePanel: 'autopilot', direction: 'below' });
       add('flight', { referencePanel: 'map', direction: 'below' }, { h: Math.round(h * 0.24) });
       add('aircraft', { referencePanel: 'radios', direction: 'within' });
+      add('atc', { referencePanel: 'radios', direction: 'within' });
       dock.getPanel('radios')?.api.setActive();
+      break;
+    case 'Airport':
+      add('map');
+      add('atc', { referencePanel: 'map', direction: 'right' }, { w: Math.round(w * 0.32) });
+      add('ground', { referencePanel: 'atc', direction: 'below' }, { h: Math.round(h * 0.42) });
+      add('radios', { referencePanel: 'ground', direction: 'within' });
+      add('sim', { referencePanel: 'ground', direction: 'within' });
+      dock.getPanel('ground')?.api.setActive();
       break;
     case 'Cruise':
     default:
@@ -58,7 +67,10 @@ export function applyPreset(dock: DockviewApi, name: string) {
       add('sim', { referencePanel: 'plan', direction: 'within' });
       add('flight', { referencePanel: 'plan', direction: 'right' }, { w: Math.round(w * 0.3) });
       add('aircraft', { referencePanel: 'flight', direction: 'within' });
+      add('atc', { referencePanel: 'radios', direction: 'within' });
+      add('ground', { referencePanel: 'plan', direction: 'within' });
       dock.getPanel('flight')?.api.setActive();
+      dock.getPanel('radios')?.api.setActive();
       dock.getPanel('plan')?.api.setActive();
       break;
   }

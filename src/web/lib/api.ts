@@ -1,6 +1,6 @@
 // Thin wrappers around SkyDeck's HTTP API.
-import type { AirportDetails, FlightPlan, LinkInstallStatus, MsfsInstallCandidate, PlanWaypoint, SearchResult, Settings } from '../../shared/types';
-import { setLocalPlan, setLocalSettings } from './store';
+import type { AirportDetails, AtcState, FlightPlan, GroundLayout, LinkInstallStatus, MsfsInstallCandidate, PlanWaypoint, SearchResult, Settings, TaxiRoute } from '../../shared/types';
+import { setLocalAtc, setLocalPlan, setLocalSettings } from './store';
 
 export class ApiError extends Error {}
 
@@ -38,6 +38,12 @@ export interface SendResult {
 export interface NearbyAirport extends AirportDetails {
   distNm: number;
 }
+
+const withAtc = async (p: Promise<AtcState>) => {
+  const atc = await p;
+  setLocalAtc(atc);
+  return atc;
+};
 
 const withPlan = async (p: Promise<FlightPlan>) => {
   const plan = await p;
@@ -77,6 +83,15 @@ export const api = {
     setLocalPlan(res.plan);
     return res;
   },
+
+  groundLayout: (ident: string) => request<GroundLayout>('GET', `/api/ground/${encodeURIComponent(ident)}`),
+  taxiTo: (target: { airport?: string; runway?: string; stand?: number }) => request<TaxiRoute>('POST', '/api/ground/route', target),
+  clearTaxiRoute: () => request<{ ok: true }>('DELETE', '/api/ground/route'),
+  assignStand: (airport: string, index: number | null) => request<{ ok: true }>('POST', '/api/ground/stand', { airport, index }),
+
+  atcStart: () => withAtc(request<AtcState>('POST', '/api/atc/start')),
+  atcStop: () => withAtc(request<AtcState>('POST', '/api/atc/stop')),
+  atcRequest: (id: string) => withAtc(request<AtcState>('POST', '/api/atc/request', { id })),
 };
 
 let airportsCache: Promise<unknown[][]> | null = null;

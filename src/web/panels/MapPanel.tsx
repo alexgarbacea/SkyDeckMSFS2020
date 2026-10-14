@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type GeoJSONSource, type MapMouseEvent, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { AirportDetails, AvionicsPlanState, FlightPlan, PlanWaypoint, Telemetry } from '../../shared/types';
+import type { AirportDetails, AvionicsPlanState, FlightPlan, GroundLayout, PlanWaypoint, Stand, TaxiRoute, Telemetry } from '../../shared/types';
 import { destinationPoint, distanceNm, greatCirclePoints, normalizeDeg } from '../../shared/geo';
-import { act, getState, subscribe, useSettings, useTelemetry } from '../lib/store';
+import { act, getState, subscribe, useGround, useSettings, useTelemetry } from '../lib/store';
+import { toast } from '../lib/toast';
 import { api, loadAirportsData, loadNavaidsData } from '../lib/api';
 import { fmtDistance, fmtDuration, fmtFreq, fmtInt, fmtLat, fmtLon } from '../lib/format';
 import { activeIndexIn, insertNearest, routeOf, setDeparture, setDestination, userWaypoint, insertWaypoint } from '../lib/plan';
@@ -160,6 +161,68 @@ function addOverlays(map: maplibregl.Map) {
     paint: { 'text-color': ['match', ['get', 't'], 'NDB', '#c9a35a', '#57c3a8'], 'text-halo-color': '#0a1015', 'text-halo-width': 1.5 },
   });
 
+  // Airport ground: taxiway centre lines, hold-short points, stands and the taxi route.
+  map.addSource('ground-taxiways', { type: 'geojson', data: EMPTY });
+  map.addSource('ground-holds', { type: 'geojson', data: EMPTY });
+  map.addSource('ground-stands', { type: 'geojson', data: EMPTY });
+  map.addSource('taxi-route', { type: 'geojson', data: EMPTY });
+  map.addLayer({
+    id: 'ground-taxiways',
+    type: 'line',
+    source: 'ground-taxiways',
+    minzoom: 12,
+    filter: ['!=', ['get', 'k'], 'runway'],
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: {
+      'line-color': ['match', ['get', 'k'], 'stand', '#7d8b96', '#c9b25a'],
+      'line-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.35, 15, 0.7],
+      'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 12, 0.6, 15, 1.5, 18, 5],
+    },
+  });
+  map.addLayer({
+    id: 'ground-holds',
+    type: 'circle',
+    source: 'ground-holds',
+    minzoom: 14,
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 2, 18, 5], 'circle-color': '#f25b52', 'circle-stroke-color': '#0a1015', 'circle-stroke-width': 1 },
+  });
+  map.addLayer({
+    id: 'taxi-route',
+    type: 'line',
+    source: 'taxi-route',
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': '#ea4fdc', 'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 12, 2.5, 16, 5, 18, 10], 'line-opacity': 0.9 },
+  });
+  map.addLayer({
+    id: 'ground-taxiways-label',
+    type: 'symbol',
+    source: 'ground-taxiways',
+    minzoom: 14.5,
+    filter: ['all', ['==', ['get', 'k'], 'taxi'], ['!=', ['get', 'n'], '']],
+    layout: { 'symbol-placement': 'line', 'symbol-spacing': 220, 'text-field': ['get', 'n'], 'text-font': FONT, 'text-size': 11, 'text-keep-upright': true },
+    paint: { 'text-color': '#f3d36b', 'text-halo-color': '#0a1015', 'text-halo-width': 2 },
+  });
+  map.addLayer({
+    id: 'ground-stands',
+    type: 'circle',
+    source: 'ground-stands',
+    minzoom: 14,
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, ['case', ['==', ['get', 'a'], 1], 5, 2.5], 18, ['case', ['==', ['get', 'a'], 1], 10, 7]],
+      'circle-color': ['case', ['==', ['get', 'a'], 1], '#4fdc84', '#0a1015'],
+      'circle-stroke-color': ['case', ['==', ['get', 'a'], 1], '#0a1015', '#9fb3c2'],
+      'circle-stroke-width': 1.5,
+    },
+  });
+  map.addLayer({
+    id: 'ground-stands-label',
+    type: 'symbol',
+    source: 'ground-stands',
+    minzoom: 15.5,
+    layout: { 'text-field': ['get', 'n'], 'text-font': FONT, 'text-size': 10, 'text-offset': [0, 1], 'text-anchor': 'top', 'text-optional': true },
+    paint: { 'text-color': ['case', ['==', ['get', 'a'], 1], '#4fdc84', '#a9b5bf'], 'text-halo-color': '#0a1015', 'text-halo-width': 1.5 },
+  });
+
   map.addLayer({ id: 'trail', type: 'line', source: 'trail', paint: { 'line-color': '#e9eef2', 'line-opacity': 0.35, 'line-width': 2 } });
   map.addLayer({
     id: 'avionics',
@@ -250,6 +313,43 @@ function guidesData(t: Telemetry | null): GeoJSON.FeatureCollection {
   return { type: 'FeatureCollection', features };
 }
 
+function groundData(layouts: Iterable<GroundLayout>, assigned: { airport: string; stand: Stand } | null | undefined) {
+  const taxiways: GeoJSON.Feature[] = [];
+  const holds: GeoJSON.Feature[] = [];
+  const stands: GeoJSON.Feature[] = [];
+  for (const l of layouts) {
+    for (const t of l.taxiways) taxiways.push({ type: 'Feature', properties: { k: t.kind, n: t.name }, geometry: { type: 'LineString', coordinates: t.coords } });
+    for (const h of l.holdShorts) holds.push({ type: 'Feature', properties: { r: h.runway }, geometry: { type: 'Point', coordinates: [h.lon, h.lat] } });
+    for (const s of l.stands) {
+      const mine = assigned?.airport === l.ident && assigned.stand.index === s.index;
+      stands.push({ type: 'Feature', properties: { ap: l.ident, i: s.index, n: s.name, a: mine ? 1 : 0 }, geometry: { type: 'Point', coordinates: [s.lon, s.lat] } });
+    }
+  }
+  const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: 'FeatureCollection', features });
+  return { taxiways: fc(taxiways), holds: fc(holds), stands: fc(stands) };
+}
+
+function taxiRouteData(route: TaxiRoute | null | undefined): GeoJSON.FeatureCollection {
+  if (!route || route.points.length < 2) return EMPTY;
+  return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: route.points } }] };
+}
+
+/** The airport whose taxiways to show for the map's centre, when zoomed in far enough. */
+function airportAtCentre(rows: unknown[][] | null, lat: number, lon: number): string | null {
+  if (!rows) return null;
+  let best: string | null = null;
+  let bestD = 4;
+  for (const r of rows as Array<[string, string, string, string, number, number, number | null, string]>) {
+    if (r[7] === 'W' || Math.abs(r[4] - lat) > 0.08 || Math.abs(r[5] - lon) > 0.12) continue;
+    const d = distanceNm(lat, lon, r[4], r[5]);
+    if (d < bestD) {
+      bestD = d;
+      best = r[0];
+    }
+  }
+  return best;
+}
+
 // ---------------------------------------------------------------- Aircraft marker
 
 function aircraftElement() {
@@ -266,7 +366,50 @@ type Selection =
   | { kind: 'airport'; lngLat: [number, number]; ident: string; name: string; details?: AirportDetails | null }
   | { kind: 'navaid'; lngLat: [number, number]; ident: string; name: string; type: string; freq: number | null }
   | { kind: 'waypoint'; lngLat: [number, number]; wp: PlanWaypoint }
+  | { kind: 'stand'; lngLat: [number, number]; airport: string; stand: Stand }
   | { kind: 'point'; lngLat: [number, number] };
+
+function StandCard({ sel, onClose }: { sel: Extract<Selection, { kind: 'stand' }>; onClose: () => void }) {
+  const t = useTelemetry();
+  const ground = useGround();
+  const s = sel.stand;
+  const atThisAirport = ground?.airport === sel.airport && t?.position.onGround;
+  const mine = ground?.assignedStand?.airport === sel.airport && ground.assignedStand.stand.index === s.index;
+  const run = (fn: () => Promise<unknown>) => {
+    fn().then(onClose, (e: Error) => toast(e.message, 'error'));
+  };
+  return (
+    <>
+      <div className="map-card__title">
+        <strong>{s.name}</strong>
+        <span>
+          {sel.airport} · {s.kind === 'gate' ? 'Gate' : s.kind === 'ramp' ? 'Ramp' : s.kind === 'cargo' ? 'Cargo stand' : s.kind === 'military' ? 'Military' : 'Parking'} · {s.size} aircraft
+        </span>
+      </div>
+      <div className="map-card__actions">
+        {atThisAirport && <Button size="sm" icon="route" onClick={() => run(() => api.taxiTo({ airport: sel.airport, stand: s.index }))}>Taxi here</Button>}
+        <Button size="sm" variant={mine ? 'primary' : 'default'} onClick={() => run(() => api.assignStand(sel.airport, mine ? null : s.index))} title="ATC sends you here after landing">
+          {mine ? 'My stand (clear)' : 'Use as my stand'}
+        </Button>
+        {t && (
+          <Button
+            size="sm"
+            icon="moveTo"
+            onClick={() =>
+              run(async () => {
+                const ap = await api.airport(sel.airport);
+                act({ type: 'teleport', lat: s.lat, lon: s.lon, altFt: ap.elevFt ?? t.position.altFt, headingTrue: s.headingTrue, kts: 0, onGround: true });
+              })
+            }
+            title="Puts the aircraft on this stand"
+          >
+            Move aircraft here
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
 
 function AirportCard({ sel, onClose }: { sel: Extract<Selection, { kind: 'airport' }>; onClose: () => void }) {
   const [details, setDetails] = useState<AirportDetails | null | undefined>(undefined);
@@ -368,6 +511,7 @@ function SelectionCard({ sel, onClose }: { sel: Selection; onClose: () => void }
       <IconButton icon="close" label="Close" className="map-card__close" onClick={onClose} />
       {sel.kind === 'airport' && <AirportCard sel={sel} onClose={onClose} />}
       {sel.kind === 'point' && <PointCard sel={sel} onClose={onClose} />}
+      {sel.kind === 'stand' && <StandCard sel={sel} onClose={onClose} />}
       {sel.kind === 'navaid' && (
         <>
           <div className="map-card__title">
@@ -416,13 +560,16 @@ interface LayerPrefs {
   navaids: boolean;
   trail: boolean;
   avionics: boolean;
+  ground: boolean;
 }
+
+const DEFAULT_PREFS: LayerPrefs = { airports: true, navaids: true, trail: true, avionics: true, ground: true };
 
 function loadPrefs(): LayerPrefs {
   try {
-    return { airports: true, navaids: true, trail: true, avionics: true, ...JSON.parse(localStorage.getItem('skydeck.map.layers') ?? '{}') };
+    return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem('skydeck.map.layers') ?? '{}') };
   } catch {
-    return { airports: true, navaids: true, trail: true, avionics: true };
+    return { ...DEFAULT_PREFS };
   }
 }
 
@@ -466,6 +613,46 @@ export function MapPanel({ detail }: PanelProps) {
     let lastPlan: FlightPlan | null | undefined;
     let lastAvionics: AvionicsPlanState | null | undefined;
     let lastActive = -2;
+    // Taxiway layouts of the airports in view (a few at most), fetched on demand.
+    const layouts = new Map<string, GroundLayout>();
+    const requested = new Set<string>();
+    let airportRows: unknown[][] | null = null;
+    let lastGround: ReturnType<typeof getState>['ground'] | undefined;
+    let lastCentreCheck = { lat: 999, lon: 999 };
+    let centreAirport: string | null = null;
+    const drawGround = () => {
+      const d = groundData(layouts.values(), getState().ground?.assignedStand);
+      (map.getSource('ground-taxiways') as GeoJSONSource | undefined)?.setData(d.taxiways);
+      (map.getSource('ground-holds') as GeoJSONSource | undefined)?.setData(d.holds);
+      (map.getSource('ground-stands') as GeoJSONSource | undefined)?.setData(d.stands);
+    };
+    const refreshGround = () => {
+      if (!ready) return;
+      const c = map.getCenter();
+      if (map.getZoom() >= 12 && distanceNm(lastCentreCheck.lat, lastCentreCheck.lon, c.lat, c.lng) > 0.3) {
+        lastCentreCheck = { lat: c.lat, lon: c.lng };
+        centreAirport = airportAtCentre(airportRows, c.lat, c.lng);
+      }
+      const g = getState().ground;
+      const wanted = [g?.airport, g?.assignedStand?.airport, map.getZoom() >= 12 ? centreAirport : null].filter((x): x is string => !!x);
+      for (const ident of wanted) {
+        if (requested.has(ident)) continue;
+        requested.add(ident);
+        api
+          .groundLayout(ident)
+          .then((l) => {
+            layouts.set(ident, l);
+            // Keep the map light: forget the oldest airport beyond four.
+            if (layouts.size > 4) {
+              const oldest = layouts.keys().next().value!;
+              layouts.delete(oldest);
+              requested.delete(oldest);
+            }
+            drawGround();
+          })
+          .catch(() => setTimeout(() => requested.delete(ident), 30_000));
+      }
+    };
 
     // isStyleLoaded() stays false while tiles stream in, so track readiness ourselves.
     let ready = false;
@@ -483,7 +670,8 @@ export function MapPanel({ detail }: PanelProps) {
         if (!markerShown) {
           marker.addTo(map);
           markerShown = true;
-          map.jumpTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 8) });
+          // On the ground, start close enough to see the taxiways.
+          map.jumpTo({ center: [lon, lat], zoom: telemetry.position.onGround ? Math.max(map.getZoom(), 14.5) : Math.max(map.getZoom(), 8) });
         }
         if (followRef.current) {
           map.jumpTo({ center: [lon, lat], bearing: trackUpRef.current ? telemetry.attitude.trackTrue : map.getBearing() });
@@ -504,6 +692,14 @@ export function MapPanel({ detail }: PanelProps) {
         trail.length = 0;
       }
       (map.getSource('guides') as GeoJSONSource | undefined)?.setData(guidesData(telemetry));
+      const ground = getState().ground;
+      if (ground !== lastGround) {
+        const prev = lastGround;
+        lastGround = ground;
+        if (ground?.route !== prev?.route) (map.getSource('taxi-route') as GeoJSONSource | undefined)?.setData(taxiRouteData(ground?.route));
+        if (ground?.assignedStand?.stand.index !== prev?.assignedStand?.stand.index || ground?.assignedStand?.airport !== prev?.assignedStand?.airport) drawGround();
+        if (ground?.airport !== prev?.airport || ground?.assignedStand?.airport !== prev?.assignedStand?.airport) refreshGround();
+      }
       const active = activeIndexIn(routeOf(plan), telemetry);
       if (plan !== lastPlan || active !== lastActive) {
         lastPlan = plan;
@@ -521,6 +717,10 @@ export function MapPanel({ detail }: PanelProps) {
       addOverlays(map);
       swapBase(map, getState().settings?.mapStyle ?? 'dark');
       airportsGeoJson().then((d) => (map.getSource('airports') as GeoJSONSource | undefined)?.setData(d)).catch(() => undefined);
+      loadAirportsData().then((rows) => {
+        airportRows = rows;
+        refreshGround();
+      }).catch(() => undefined);
       navaidsGeoJson().then((d) => (map.getSource('navaids') as GeoJSONSource | undefined)?.setData(d)).catch(() => undefined);
       applyPrefs(map, loadPrefs());
       const plan = getState().plan;
@@ -532,13 +732,14 @@ export function MapPanel({ detail }: PanelProps) {
       update();
     });
     const unsub = subscribe(update);
+    map.on('moveend', refreshGround);
 
     // Stop following when the user drags the map.
     map.on('dragstart', (e) => {
       if ((e as unknown as { originalEvent?: Event }).originalEvent) setFollow(false);
     });
 
-    const clickable = ['route-points', 'airports-l', 'airports-m', 'airports-s', 'navaids'];
+    const clickable = ['route-points', 'ground-stands', 'airports-l', 'airports-m', 'airports-s', 'navaids'];
     map.on('click', (e: MapMouseEvent) => {
       const layers = clickable.filter((l) => map.getLayer(l));
       const f = map.queryRenderedFeatures(e.point, { layers })[0];
@@ -551,6 +752,9 @@ export function MapPanel({ detail }: PanelProps) {
       if (f.layer.id === 'route-points') {
         const wp = routeOf(getState().plan).find((w) => w.id === p.id);
         if (wp) setSelection({ kind: 'waypoint', lngLat: coords, wp });
+      } else if (f.layer.id === 'ground-stands') {
+        const stand = layouts.get(String(p.ap))?.stands[Number(p.i)];
+        if (stand) setSelection({ kind: 'stand', lngLat: coords, airport: String(p.ap), stand });
       } else if (f.layer.id === 'navaids') {
         setSelection({ kind: 'navaid', lngLat: coords, ident: String(p.i), name: String(p.n), type: String(p.t), freq: p.f == null ? null : Number(p.f) });
       } else {
@@ -658,6 +862,7 @@ export function MapPanel({ detail }: PanelProps) {
                 ['navaids', 'VORs and NDBs'],
                 ['trail', 'Flown track'],
                 ['avionics', 'Route in the avionics (SkyDeck Link)'],
+                ['ground', 'Taxiways and stands (zoom in on an airport)'],
               ] as const
             ).map(([k, label]) => (
               <label key={k} className="check">
@@ -694,6 +899,9 @@ function applyPrefs(map: maplibregl.Map, prefs: LayerPrefs) {
   for (const id of ['navaids', 'navaids-label']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis(prefs.navaids));
   if (map.getLayer('trail')) map.setLayoutProperty('trail', 'visibility', vis(prefs.trail));
   if (map.getLayer('avionics')) map.setLayoutProperty('avionics', 'visibility', vis(prefs.avionics));
+  for (const id of ['ground-taxiways', 'ground-taxiways-label', 'ground-holds', 'ground-stands', 'ground-stands-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis(prefs.ground));
+  }
 }
 
 
