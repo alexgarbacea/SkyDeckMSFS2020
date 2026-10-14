@@ -25,6 +25,12 @@ in-flight flight plan link described below.
   procedures come from the sim's own navigation database. There's also a vertical profile. Import from SimBrief,
   the MSFS World Map, `.PLN` files or a typed route, then **Send to MSFS**, before or during the flight.
 - **Aircraft controls**: autopilot, COM/NAV radios, transponder, altimeter, lights, flaps, gear, engines and fuel.
+- **Text ATC**: from clearance delivery to your parking stand. Pick what to say from a short list of calls and
+  controllers answer, handing you on through Ground, Tower, Departure, Control, Approach and back. Frequencies
+  come from the airport data, and SkyDeck tells you if you taxi, take off or enter a runway without a clearance.
+- **Ground and parking**: taxi routes along the scenery's own taxiways (read from MSFS), drawn on the map with
+  turn-by-turn steps, runway crossings and hold-short points. Pick a stand, taxi to it, or move the aircraft
+  onto it, with docking guidance for the last few metres.
 - **Simulator controls**: pause, sim rate, time of day, slew and pushback. You can also reposition the aircraft to
   a runway or onto an N-mile final.
 - **Command bar** (<kbd>Ctrl</kbd>+<kbd>K</kbd>): `alt 8000`, `hdg 270`, `com1 121.5`, `squawk 7000`,
@@ -67,6 +73,7 @@ MSFS ──SimConnect──▶ SkyDeck server (Node.js) ──WebSocket/HTTP─�
 
 | Path | What's there |
 | --- | --- |
+| `src/server/ground`, `src/server/atc` | Taxiway graph and routing (from the sim's facility data), live taxi guidance, and the text ATC engine. |
 | `src/server` | Express + WebSocket server. `bridge/simconnect.ts` talks to MSFS through [node-simconnect](https://github.com/EvenAR/node-simconnect) (pure JS, no native build). `bridge/demo.ts` is the simulated aircraft. `flightplan/` reads and writes `.PLN` files and expands procedures. `link/` installs SkyDeck Link. |
 | `src/web` | React UI. Panels are in `src/web/panels`. The dock layout uses [dockview](https://dockview.dev) and the map uses [MapLibre](https://maplibre.org) with Esri raster tiles, so no API key is needed. |
 | `src/shared` | Types and geo helpers used by both sides. |

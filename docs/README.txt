@@ -7,7 +7,8 @@ SkyDeck shows your aircraft, a moving map and your flight plan in a web browser,
 ideally on a second monitor, and lets you control the aircraft from there:
 autopilot, radios, transponder, lights, flaps, fuel, time of day, pause and
 sim rate, moving the aircraft, and building and loading flight plans with
-SIDs, STARs and approaches.
+SIDs, STARs and approaches. It also has text ATC that takes you from clearance
+delivery to your parking stand, with taxi routes on the real airport layout.
 
 Getting started
 ---------------
@@ -33,6 +34,26 @@ Tips
   the aircraft there. Click an airport for frequencies and runways.
 - Flight plan: pick runways, SIDs, STARs and approaches in the large view, then
   press "Send to aircraft". See "Flight plans and glass cockpits" below.
+
+ATC and taxiing
+---------------
+Pick the "Airport" layout (top bar) to see the ATC and Ground panels.
+- ATC: press Start ATC. SkyDeck uses your flight plan's departure and
+  destination; without a plan it sets up a local VFR flight. Tune the
+  frequency shown (the Tune button does it for you), then press the
+  highlighted button to call: clearance, taxi, ready for departure, check in
+  and so on. Controllers answer in the log and hand you on to the next one:
+  Delivery, Ground, Tower, Departure, Control, Approach, Tower, Ground.
+- Read back clearances with the Read back button. SkyDeck warns you about
+  taxiing or taking off without clearance, entering a runway, leaving the taxi
+  route, the wrong altitude and the wrong squawk.
+- Ground: the taxi route is drawn on the map in magenta, with the next turn and
+  the distance to go. Zoom the map in on any airport to see its taxiways,
+  hold-short points (red) and stands. Click a stand to taxi there, move the
+  aircraft onto it, or choose it as your stand at the destination. Near the
+  stand, a docking board shows how far to go and which way to steer.
+- Turn off the simulator's own ATC voice. If MSFS's ATC keeps COM 1 on its own
+  frequency (its auto-tune assistance does that), SkyDeck tunes COM 2 instead.
 
 Flight plans and glass cockpits (SkyDeck Link)
 ----------------------------------------------
