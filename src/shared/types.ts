@@ -251,6 +251,151 @@ export type SearchResult =
   | ({ kind: 'navaid' } & NavaidSummary)
   | { kind: 'fix'; ident: string; name: string; lat: number; lon: number; region?: string };
 
+// ---------------------------------------------------------------- Ground (taxiways and stands)
+
+export type StandKind = 'gate' | 'ramp' | 'cargo' | 'military' | 'other';
+
+export interface Stand {
+  /** Position in the airport's parking list; stable for one airport. */
+  index: number;
+  /** As pilots see it, e.g. "Gate A12" or "Parking 4". */
+  name: string;
+  kind: StandKind;
+  /** The largest aircraft the stand takes, roughly. */
+  size: 'small' | 'medium' | 'large';
+  lat: number;
+  lon: number;
+  headingTrue: number;
+  radiusM: number;
+}
+
+export interface GroundLayout {
+  ident: string;
+  /** 'sim': the scenery's own taxiways. 'generated': a simple stand-in used by the demo aircraft. */
+  source: 'sim' | 'generated';
+  /** Taxiway centre lines as [lon, lat] pieces. */
+  taxiways: Array<{ coords: Array<[number, number]>; name: string; kind: 'taxi' | 'runway' | 'stand' }>;
+  holdShorts: Array<{ lat: number; lon: number; runway: string }>;
+  stands: Stand[];
+}
+
+export interface TaxiStep {
+  /** Metres from the start of the route. */
+  atM: number;
+  kind: 'turn' | 'cross' | 'hold' | 'stand';
+  text: string;
+}
+
+export interface TaxiRoute {
+  airport: string;
+  to: { kind: 'runway'; runway: string } | { kind: 'stand'; stand: Stand };
+  /** [lon, lat] points along the taxiway centre lines, starting at the aircraft. */
+  points: Array<[number, number]>;
+  /** Taxiway names in order, e.g. ["A", "B2"]. */
+  via: string[];
+  /** Runways crossed on the way, in order. */
+  crossings: string[];
+  steps: TaxiStep[];
+  lengthM: number;
+}
+
+export interface GroundState {
+  /** The airport the aircraft is on, when it is on the ground at one. */
+  airport: string | null;
+  /** The runway the aircraft is on, e.g. "09/27". */
+  runway: string | null;
+  route: TaxiRoute | null;
+  progress: {
+    remainingM: number;
+    /** Distance from the route's centre line. */
+    offRouteM: number;
+    next: TaxiStep | null;
+    nextInM: number | null;
+    arrived: boolean;
+  } | null;
+  /** Lead-in guidance onto the stand in the last stretch. */
+  docking: { stand: string; distanceM: number; lateralM: number; headingError: number } | null;
+  /** Stand picked for the aircraft at the destination (or the current airport). */
+  assignedStand: { airport: string; stand: Stand } | null;
+}
+
+// ---------------------------------------------------------------- ATC
+
+export type AtcRole = 'atis' | 'delivery' | 'ground' | 'tower' | 'departure' | 'center' | 'approach' | 'unicom';
+
+export interface AtcStation {
+  role: AtcRole;
+  /** e.g. "Heraklion Ground". */
+  name: string;
+  mhz: number;
+  airport?: string;
+}
+
+export interface AtcMessage {
+  id: number;
+  time: number;
+  from: 'atc' | 'pilot' | 'system';
+  /** Who spoke (ATC) or who was called (pilot). */
+  station: string;
+  mhz: number | null;
+  text: string;
+  level?: 'info' | 'warning';
+}
+
+export interface AtcRequest {
+  id: string;
+  /** Button text, e.g. "Request taxi". */
+  label: string;
+  /** What the pilot says. */
+  text: string;
+  primary?: boolean;
+}
+
+export type AtcPhase =
+  | 'idle'
+  | 'preflight'
+  | 'cleared'
+  | 'pushback'
+  | 'taxi-out'
+  | 'holding'
+  | 'takeoff'
+  | 'departure'
+  | 'enroute'
+  | 'vfr-enroute'
+  | 'approach'
+  | 'final'
+  | 'landed'
+  | 'taxi-in'
+  | 'parked';
+
+export interface AtcState {
+  active: boolean;
+  callsign: string;
+  phase: AtcPhase;
+  /** Plain-language description of the phase, e.g. "Taxi to runway 27". */
+  phaseLabel: string;
+  rules: 'IFR' | 'VFR';
+  departure: string | null;
+  destination: string | null;
+  /** Who the pilot is talking to now. */
+  station: AtcStation | null;
+  /** Whether COM 1 or COM 2 is tuned to the station. */
+  tuned: boolean;
+  /** Waiting for ATC to answer. */
+  busy: boolean;
+  requests: AtcRequest[];
+  transcript: AtcMessage[];
+  assigned: {
+    altitudeFt: number | null;
+    squawk: string | null;
+    runway: string | null;
+    stand: string | null;
+  };
+  /** What to do next, in plain words. */
+  hint: string | null;
+  atis: { airport: string; letter: string; text: string; mhz: number | null } | null;
+}
+
 // ---------------------------------------------------------------- Settings
 
 export interface Settings {
@@ -268,6 +413,8 @@ export interface Settings {
   layouts: Record<string, unknown>;
   activeLayout: string;
   mapStyle: string;
+  /** Callsign ATC uses; empty means the aircraft's own registration. */
+  atcCallsign: string;
 }
 
 export interface MsfsInstallCandidate {
@@ -306,6 +453,8 @@ export type ServerMessage =
   | { type: 'telemetry'; data: Telemetry }
   | { type: 'plan'; plan: FlightPlan | null }
   | { type: 'settings'; settings: Settings }
+  | { type: 'ground'; state: GroundState }
+  | { type: 'atc'; state: AtcState }
   | { type: 'result'; id: number; ok: boolean; message?: string }
   | { type: 'notice'; level: 'info' | 'success' | 'warning' | 'error'; message: string };
 

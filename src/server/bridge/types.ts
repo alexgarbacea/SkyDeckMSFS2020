@@ -1,6 +1,7 @@
 import type { EventEmitter } from 'node:events';
 import type { AirportDetails, Command, FlightPlan, Telemetry } from '../../shared/types.js';
 import type { AirportProcedureLegs } from '../flightplan/procedures.js';
+import type { RawGround } from '../ground/graph.js';
 
 export interface BridgeEvents {
   telemetry: (t: Telemetry) => void;
@@ -26,6 +27,8 @@ export interface SimBridge extends EventEmitter {
   airportFromSim(icao: string): Promise<Partial<AirportDetails> | null>;
   /** SID/STAR/approach fixes from the simulator's database (null when unavailable, e.g. in the demo). */
   procedureLegs(icao: string): Promise<AirportProcedureLegs | null>;
+  /** Taxiways and stands from the scenery (null when unavailable, e.g. in the demo). */
+  airportGround(icao: string): Promise<RawGround | null>;
   /** Looks up a named fix / navaid in the simulator database. */
   findFix(ident: string, near?: { lat: number; lon: number }, regions?: string[]): Promise<{ ident: string; lat: number; lon: number; region: string; type: 'fix' | 'vor' | 'ndb' } | null>;
 }

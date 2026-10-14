@@ -335,4 +335,8 @@ export class DemoBridge extends EventEmitter implements SimBridge {
   async procedureLegs() {
     return null;
   }
+
+  async airportGround() {
+    return null;
+  }
 }

@@ -18,6 +18,7 @@ import { buildTelemetry, FUEL_TANKS, NUMERIC_VARS, STRING_VARS } from './simvars
 import { eventsForCommand } from './events.js';
 import { CommandError, type SimBridge } from './types.js';
 import { emptyProcedure, type AirportProcedureLegs, type LegFix, type ProcedureLegs } from '../flightplan/procedures.js';
+import type { RawGround } from '../ground/graph.js';
 import { log } from '../log.js';
 
 const USER = SimConnectConstants.OBJECT_ID_USER;
@@ -26,7 +27,7 @@ const PRIORITY_HIGHEST = 1;
 const FLAG_GROUPID_IS_PRIORITY = 16;
 const DATA_REQUEST_FLAG_CHANGED = 1;
 
-enum Def { Numeric = 1, Strings, FuelCapacity, FuelQuantity, InitPosition, ApAltitudeWrite, ApSpeedWrite, FacAirport = 100, FacWaypoint, FacProcedureLegs }
+enum Def { Numeric = 1, Strings, FuelCapacity, FuelQuantity, InitPosition, ApAltitudeWrite, ApSpeedWrite, FacAirport = 100, FacWaypoint, FacProcedureLegs, FacGround }
 enum Req { Numeric = 1, Strings, FuelCapacity, SimState }
 enum SysEvent { Pause = 1, Sim, AircraftLoaded, FlightPlanActivated, FlightLoaded }
 
@@ -375,6 +376,22 @@ export class SimConnectBridge extends EventEmitter implements SimBridge {
       ...sidStar('ARRIVAL'),
       'CLOSE AIRPORT',
     ].forEach((f) => h.addToFacilityDefinition(Def.FacProcedureLegs, f));
+    [
+      'OPEN AIRPORT', 'LATITUDE', 'LONGITUDE',
+      'OPEN TAXI_POINT', 'TYPE', 'BIAS_X', 'BIAS_Z', 'CLOSE TAXI_POINT',
+      'OPEN TAXI_PARKING', 'TYPE', 'NAME', 'NUMBER', 'HEADING', 'RADIUS', 'BIAS_X', 'BIAS_Z', 'CLOSE TAXI_PARKING',
+      'OPEN TAXI_PATH', 'TYPE', 'START', 'END', 'NAME_INDEX', 'CLOSE TAXI_PATH',
+      'OPEN TAXI_NAME', 'NAME', 'CLOSE TAXI_NAME',
+      'CLOSE AIRPORT',
+    ].forEach((f) => h.addToFacilityDefinition(Def.FacGround, f));
+  }
+
+  /** Taxiways, hold-short points and stands of an airport, as the scenery defines them. */
+  async airportGround(icao: string): Promise<RawGround | null> {
+    const items = await this.requestFacility(Def.FacGround, icao.toUpperCase(), '', undefined, 10000);
+    if (!items?.length) return null;
+    const raw = parseGroundFacility(items);
+    return raw.points.length ? raw : null;
   }
 
   private legCache = new Map<string, Promise<AirportProcedureLegs | null>>();
@@ -495,6 +512,33 @@ export function parseProcedureLegs(items: RecvFacilityData[]): AirportProcedureL
     }
   }
   return out;
+}
+
+/** Reads the taxi records of one airport. List order is significant: paths refer to points and parkings by index. */
+export function parseGroundFacility(items: RecvFacilityData[]): RawGround {
+  const raw: RawGround = { refLat: 0, refLon: 0, points: [], parkings: [], paths: [], names: [] };
+  for (const r of items) {
+    const b = r.data;
+    switch (r.type) {
+      case FacilityDataType.AIRPORT:
+        raw.refLat = b.readFloat64();
+        raw.refLon = b.readFloat64();
+        break;
+      case FacilityDataType.TAXI_POINT:
+        raw.points.push({ type: b.readInt32(), x: b.readFloat32(), z: b.readFloat32() });
+        break;
+      case FacilityDataType.TAXI_PARKING:
+        raw.parkings.push({ type: b.readInt32(), name: b.readInt32(), number: b.readInt32(), heading: b.readFloat32(), radius: b.readFloat32(), x: b.readFloat32(), z: b.readFloat32() });
+        break;
+      case FacilityDataType.TAXI_PATH:
+        raw.paths.push({ type: b.readInt32(), start: b.readInt32(), end: b.readInt32(), nameIndex: b.readInt32() });
+        break;
+      case FacilityDataType.TAXI_NAME:
+        raw.names.push(b.readString32());
+        break;
+    }
+  }
+  return raw;
 }
 
 /** Turns the ordered facility records for one airport into AirportDetails fields. Reading order matters. */

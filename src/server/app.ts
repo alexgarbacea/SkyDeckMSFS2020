@@ -10,6 +10,8 @@ import { CommandError } from './bridge/types.js';
 import { getSettings, updateSettings } from './config.js';
 import { customFlightPlanPath, detectInstalls, inspectInstall, isDirectory, listFolders, readPackagesPath } from './msfs.js';
 import { airportDetailsOffline, navDataFile, nearestAirports, regionsNear, search } from './navdata.js';
+import { GroundService } from './ground/service.js';
+import { AtcEngine, AtcError } from './atc/engine.js';
 import { buildPln, parsePln } from './flightplan/pln.js';
 import { directToPlan, PlanStore } from './flightplan/store.js';
 import { expandPlan } from './flightplan/procedures.js';
@@ -44,6 +46,15 @@ export class SkyDeckServer {
   readonly bridges = new BridgeManager();
   readonly plans = new PlanStore();
   readonly link = new LinkManager();
+  readonly ground = new GroundService({ bridge: () => this.bridges.active, airport: (ident) => this.airportDetails(ident) });
+  readonly atc = new AtcEngine({
+    airport: (ident) => this.airportDetails(ident),
+    ground: this.ground,
+    plan: () => this.plans.plan,
+    nearest: (lat, lon, count, sizes) => nearestAirports(lat, lon, count, sizes),
+    callsign: () => getSettings().atcCallsign,
+  });
+  private airportCache = new Map<string, { at: number; details: Promise<AirportDetails | null> }>();
   private readonly app = express();
   private server: http.Server | null = null;
   private wss = new WebSocketServer({ noServer: true });
@@ -57,8 +68,17 @@ export class SkyDeckServer {
     this.linkWss.on('connection', (ws) => this.link.attach(ws));
     this.link.on('change', () => this.broadcast({ type: 'status', status: this.status() }));
     this.link.on('state', (state) => this.broadcast({ type: 'avionics', state }));
-    this.bridges.on('telemetry', () => this.flushTelemetry());
-    this.bridges.on('status', () => this.broadcast({ type: 'status', status: this.status() }));
+    this.bridges.on('telemetry', () => {
+      this.flushTelemetry();
+      this.ground.update(this.bridges.latest);
+      this.atc.update(this.bridges.latest);
+    });
+    this.bridges.on('status', () => {
+      this.broadcast({ type: 'status', status: this.status() });
+      if (!this.bridges.latest) this.ground.update(null);
+    });
+    this.ground.on('state', (state) => this.broadcast({ type: 'ground', state }));
+    this.atc.on('state', (state) => this.broadcast({ type: 'atc', state }));
     this.bridges.on('notice', (level, message) => this.broadcast({ type: 'notice', level, message }));
     this.bridges.on('simFlightPlan', (file: string) => void this.onSimFlightPlan(file));
     this.plans.on('change', (plan: FlightPlan | null) => {
@@ -181,6 +201,8 @@ export class SkyDeckServer {
     this.send(ws, { type: 'plan', plan: this.plans.plan });
     if (this.bridges.latest) this.send(ws, { type: 'telemetry', data: this.bridges.latest });
     this.send(ws, { type: 'avionics', state: this.link.state });
+    this.send(ws, { type: 'ground', state: this.ground.state });
+    this.send(ws, { type: 'atc', state: this.atc.state() });
     ws.on('message', async (raw) => {
       let msg: ClientMessage;
       try {
@@ -231,6 +253,41 @@ export class SkyDeckServer {
     } catch (err) {
       log.warn('Could not look up procedures:', (err as Error).message);
     }
+  }
+
+  // ---------------------------------------------------------------- Airports
+
+  /** Offline airport data merged with the simulator's own (runways, frequencies, procedures). Cached briefly. */
+  airportDetails(ident: string): Promise<AirportDetails | null> {
+    const id = ident.toUpperCase();
+    const bridge = this.bridges.active;
+    const key = `${bridge?.kind ?? 'none'}:${id}`;
+    const hit = this.airportCache.get(key);
+    if (hit && Date.now() - hit.at < 10 * 60_000) return hit.details;
+    const details = (async (): Promise<AirportDetails | null> => {
+      const offline = airportDetailsOffline(id);
+      const fromSim = bridge?.kind === 'sim' ? await bridge.airportFromSim(id) : null;
+      if (!offline && !fromSim) return null;
+      return {
+        ident: id,
+        name: offline?.name ?? fromSim?.name ?? id,
+        city: offline?.city ?? '',
+        country: offline?.country ?? '',
+        lat: fromSim?.lat ?? offline!.lat,
+        lon: fromSim?.lon ?? offline!.lon,
+        elevFt: offline?.elevFt ?? fromSim?.elevFt ?? null,
+        size: offline?.size ?? 'small',
+        iata: offline?.iata,
+        // Runway geometry from the sim matches the scenery; OurAirports adds surface info when the sim has none.
+        runways: fromSim?.runways?.length ? fromSim.runways : offline?.runways ?? [],
+        frequencies: fromSim?.frequencies?.length ? fromSim.frequencies : offline?.frequencies ?? [],
+        procedures: fromSim?.procedures ?? null,
+        source: fromSim ? 'sim' : 'offline',
+      };
+    })();
+    this.airportCache.set(key, { at: Date.now(), details });
+    void details.then((d) => d ?? this.airportCache.delete(key));
+    return details;
   }
 
   // ---------------------------------------------------------------- HTTP routes
@@ -315,27 +372,9 @@ export class SkyDeckServer {
     }));
     app.get('/api/airport/:ident', asyncRoute(async (req, res) => {
       const ident = req.params.ident.toUpperCase();
-      const offline = airportDetailsOffline(ident);
-      const bridge = this.bridges.active;
-      const fromSim = bridge?.kind === 'sim' ? await bridge.airportFromSim(ident) : null;
-      if (!offline && !fromSim) throw new UserError(`No airport called ${ident} was found.`);
-      const merged: AirportDetails = {
-        ident,
-        name: offline?.name ?? fromSim?.name ?? ident,
-        city: offline?.city ?? '',
-        country: offline?.country ?? '',
-        lat: fromSim?.lat ?? offline!.lat,
-        lon: fromSim?.lon ?? offline!.lon,
-        elevFt: offline?.elevFt ?? fromSim?.elevFt ?? null,
-        size: offline?.size ?? 'small',
-        iata: offline?.iata,
-        // Runway geometry from the sim matches the scenery; OurAirports adds surface info when the sim has none.
-        runways: fromSim?.runways?.length ? fromSim.runways : offline?.runways ?? [],
-        frequencies: fromSim?.frequencies?.length ? fromSim.frequencies : offline?.frequencies ?? [],
-        procedures: fromSim?.procedures ?? null,
-        source: fromSim ? 'sim' : 'offline',
-      };
-      res.json(merged);
+      const details = await this.airportDetails(ident);
+      if (!details) throw new UserError(`No airport called ${ident} was found.`);
+      res.json(details);
     }));
     app.get('/api/nearest', (req, res) => {
       const lat = Number(req.query.lat);
@@ -352,6 +391,57 @@ export class SkyDeckServer {
       if (!wp) throw new UserError(`Could not find "${req.body?.ident}". Check the spelling, or click the map to add a custom point.`);
       res.json(wp);
     }));
+
+    // --- Ground: taxiways, stands and taxi routes
+    app.get('/api/ground/:ident', asyncRoute(async (req, res) => {
+      const ident = req.params.ident.toUpperCase();
+      const layout = await this.ground.layout(ident);
+      if (!layout) throw new UserError(`No taxiway data for ${ident}.`);
+      res.json(layout);
+    }));
+    app.post('/api/ground/route', asyncRoute(async (req, res) => {
+      const t = this.bridges.latest;
+      if (!t) throw new UserError('Taxi routes need an aircraft. Start a flight in MSFS (or the demo) first.');
+      const body = req.body as { airport?: string; runway?: string; stand?: number };
+      const airport = String(body.airport ?? this.ground.state.airport ?? '').toUpperCase();
+      if (!airport) throw new UserError('The aircraft is not at an airport.');
+      const target = body.runway ? { kind: 'runway' as const, runway: String(body.runway) } : typeof body.stand === 'number' ? { kind: 'stand' as const, index: body.stand } : null;
+      if (!target) throw new UserError('Pick a runway or a stand.');
+      const route = await this.ground.plan(airport, { lat: t.position.lat, lon: t.position.lon, headingTrue: t.attitude.hdgTrue }, target);
+      if (!route) throw new UserError(`No taxi route found at ${airport}. The scenery may have no taxiway data there.`);
+      this.ground.setRoute(route);
+      res.json(route);
+    }));
+    app.delete('/api/ground/route', (_req, res) => {
+      this.ground.setRoute(null);
+      res.json({ ok: true });
+    });
+    app.post('/api/ground/stand', asyncRoute(async (req, res) => {
+      const body = req.body as { airport?: string; index?: number | null };
+      const airport = String(body.airport ?? '').toUpperCase();
+      if (!airport) throw new UserError('Which airport?');
+      const stand = typeof body.index === 'number' ? await this.ground.standByIndex(airport, body.index) : null;
+      if (typeof body.index === 'number' && !stand) throw new UserError('That stand does not exist.');
+      this.ground.assignStand(airport, stand);
+      res.json({ ok: true });
+    }));
+
+    // --- ATC
+    const atcCall = (fn: (req: Request) => Promise<void> | void) =>
+      asyncRoute(async (req, res) => {
+        try {
+          await fn(req);
+        } catch (err) {
+          if (err instanceof AtcError) throw new UserError(err.message);
+          throw err;
+        }
+        res.json(this.atc.state());
+      });
+    app.get('/api/atc', (_req, res) => res.json(this.atc.state()));
+    app.get('/api/ground', (_req, res) => res.json(this.ground.state));
+    app.post('/api/atc/start', atcCall(() => this.atc.start(this.bridges.latest)));
+    app.post('/api/atc/stop', atcCall(() => this.atc.stop()));
+    app.post('/api/atc/request', atcCall((req) => this.atc.request(String(req.body?.id ?? ''))));
 
     // --- SkyDeck Link (in-sim add-on)
     const linkSettings = () => {

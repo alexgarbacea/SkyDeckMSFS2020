@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   layouts: {},
   activeLayout: 'Cruise',
   mapStyle: 'dark',
+  atcCallsign: '',
 };
 
 let current: Settings = structuredClone(DEFAULT_SETTINGS);
